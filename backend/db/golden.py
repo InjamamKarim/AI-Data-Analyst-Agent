@@ -418,14 +418,79 @@ GOLDEN_CASES: list[dict] = [
         f"SELECT COUNT(*) AS lines\nFROM order_items oi\nJOIN orders o ON o.order_id = oi.order_id\nWHERE o.status = 'completed' AND oi.discount >= 0.2 AND {YEAR}",
         "oi.discount >= 0.2",
     ),
+    _case(
+        "q51",
+        "Which department has the highest average salary?",
+        "SELECT department, ROUND(AVG(salary), 2) AS avg_salary\nFROM hr_employees\nGROUP BY department\nORDER BY avg_salary DESC, department ASC\nLIMIT 1",
+        "AVG(salary)",
+        ordered=True,
+    ),
+    _case(
+        "q52",
+        "How many support tickets are open?",
+        "SELECT COUNT(*) AS open_tickets\nFROM support_tickets\nWHERE status = 'open'",
+        "status = 'open'",
+    ),
+    _case(
+        "q53",
+        "What is the total marketing spend in 2024?",
+        "SELECT ROUND(SUM(spend), 2) AS total_spend\nFROM marketing_campaigns\nWHERE start_date >= '2024-01-01' AND start_date < '2025-01-01'",
+        "SUM(spend)",
+    ),
+    _case(
+        "q54",
+        "Which customers have placed more than 5 completed orders in 2024?",
+        f"SELECT c.name AS customer, COUNT(o.order_id) AS order_count\nFROM orders o\nJOIN customers c ON c.customer_id = o.customer_id\nWHERE o.status = 'completed' AND {YEAR}\nGROUP BY c.customer_id, c.name\nHAVING COUNT(o.order_id) > 5\nORDER BY order_count DESC, c.name ASC",
+        "HAVING COUNT(o.order_id) > 5",
+        ordered=True,
+    ),
+    _case(
+        "q55",
+        "What is the highest discount given on any completed order line?",
+        "SELECT MAX(oi.discount) AS max_discount\nFROM order_items oi\nJOIN orders o ON o.order_id = oi.order_id\nWHERE o.status = 'completed'",
+        "MAX(oi.discount)",
+    ),
+    _case(
+        "q56",
+        "How many employees were hired after 2022?",
+        "SELECT COUNT(*) AS employees\nFROM hr_employees\nWHERE hired_date >= '2023-01-01'",
+        "hired_date >= '2023-01-01'",
+    ),
+    _case(
+        "q57",
+        "What is the support ticket priority breakdown?",
+        "SELECT priority, COUNT(*) AS tickets\nFROM support_tickets\nGROUP BY priority\nORDER BY priority ASC",
+        "GROUP BY priority",
+        ordered=True,
+    ),
+    _case(
+        "q58",
+        "Which product category has the most distinct products?",
+        "SELECT category, COUNT(*) AS product_count\nFROM products\nGROUP BY category\nORDER BY product_count DESC, category ASC\nLIMIT 1",
+        "COUNT(*) AS product_count",
+        ordered=True,
+    ),
+    _case(
+        "q59",
+        "What is the average number of line items per completed order?",
+        "SELECT ROUND(CAST(COUNT(*) AS REAL) / COUNT(DISTINCT o.order_id), 2) AS avg_lines\nFROM order_items oi\nJOIN orders o ON o.order_id = oi.order_id\nWHERE o.status = 'completed'",
+        "COUNT(DISTINCT o.order_id)",
+    ),
+    _case(
+        "q60",
+        "Which marketing campaign had the highest spend?",
+        "SELECT name, spend\nFROM marketing_campaigns\nORDER BY spend DESC, name ASC\nLIMIT 1",
+        "ORDER BY spend DESC, name ASC",
+        ordered=True,
+    ),
 ]
 
 
 def _validate() -> None:
     ids = [case["id"] for case in GOLDEN_CASES]
     questions = [" ".join(case["question"].split()).casefold() for case in GOLDEN_CASES]
-    if len(GOLDEN_CASES) != 50:
-        raise RuntimeError(f"Expected 50 golden cases, found {len(GOLDEN_CASES)}")
+    if len(GOLDEN_CASES) != 60:
+        raise RuntimeError(f"Expected 60 golden cases, found {len(GOLDEN_CASES)}")
     if len(set(ids)) != len(ids):
         raise RuntimeError("Duplicate golden ids")
     if len(set(questions)) != len(questions):

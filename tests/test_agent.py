@@ -148,3 +148,22 @@ def test_unknown_planner_mode_does_not_blame_the_api_key():
     assert result["sql"] is None
     assert "Unknown planner mode" in result["output"]
     assert "NVIDIA_API_KEY" not in result["output"]
+
+
+def test_multiturn_history_propagates():
+    session = Session()
+    res1 = session.ask("How many products are in the catalog?", planner_mode="scripted")
+    thread_id = res1["thread_id"]
+    assert res1["rows"][0]["products"] == 12
+    assert len(res1["conversation_history"]) == 1
+
+    res2 = session.ask(
+        "How many customers are in the Enterprise segment?",
+        planner_mode="scripted",
+        thread_id=thread_id,
+    )
+    assert res2["thread_id"] == thread_id
+    assert res2["rows"][0]["customers"] > 0
+    assert len(res2["conversation_history"]) == 2
+    assert res2["conversation_history"][0]["q"] == "How many products are in the catalog?"
+    assert res2["conversation_history"][1]["q"] == "How many customers are in the Enterprise segment?"

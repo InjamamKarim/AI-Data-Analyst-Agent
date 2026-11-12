@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import re
+import threading
+import time
+import uuid
 from contextlib import asynccontextmanager
 from io import BytesIO
+from logging import Filter, Formatter, LogRecord
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -30,10 +35,99 @@ logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 EXAMPLE_IDS = ["q01", "q10", "q12", "q14", "q16", "q27", "q30", "q40"]
 
+# ---------------------------------------------------------------------------
+# Structured logging
+# ---------------------------------------------------------------------------
+_request_id_var: "contextvars.ContextVar[str]" = None  # set up below
+
+try:
+    import contextvars
+    _request_id_var = contextvars.ContextVar("request_id", default="")
+except Exception:
+    _request_id_var = None  # type: ignore[assignment]
+
+
+class JsonFormatter(Formatter):
+    """Emit one JSON object per log record."""
+
+    def format(self, record: LogRecord) -> str:
+        payload: dict = {
+            "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exc"] = self.formatException(record.exc_info)
+        # Merge any extra fields injected by filters
+        for key, val in record.__dict__.items():
+            if key not in {
+                "name", "msg", "args", "levelname", "levelno", "pathname",
+                "filename", "module", "exc_info", "exc_text", "stack_info",
+                "lineno", "funcName", "created", "msecs", "relativeCreated",
+                "thread", "threadName", "processName", "process", "message",
+                "taskName",
+            } and not key.startswith("_"):
+                payload[key] = val
+        return json.dumps(payload, default=str)
+
+
+class RequestIdFilter(Filter):
+    """Inject the current request_id into every log record."""
+
+    def filter(self, record: LogRecord) -> bool:
+        record.request_id = (  # type: ignore[attr-defined]
+            _request_id_var.get("") if _request_id_var is not None else ""
+        )
+        return True
+
+
+# ---------------------------------------------------------------------------
+# Rate limiter (sliding-window, in-memory, no extra packages)
+# ---------------------------------------------------------------------------
+_RATE_LIMIT = 30       # requests
+_RATE_WINDOW = 60.0    # seconds
+
+
+class RateLimiter:
+    """Per-IP sliding-window rate limiter backed by a deque."""
+
+    def __init__(self, limit: int = _RATE_LIMIT, window: float = _RATE_WINDOW) -> None:
+        self._limit = limit
+        self._window = window
+        self._buckets: dict[str, collections.deque] = {}
+        self._lock = threading.Lock()
+
+    def is_allowed(self, key: str) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            dq = self._buckets.setdefault(key, collections.deque())
+            # Evict timestamps outside the window
+            while dq and now - dq[0] > self._window:
+                dq.popleft()
+            if len(dq) >= self._limit:
+                return False
+            dq.append(now)
+            return True
+
+
+_rate_limiter = RateLimiter()
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # JSON structured logging
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    if not root.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(JsonFormatter())
+        handler.addFilter(RequestIdFilter())
+        root.addHandler(handler)
+    else:
+        for h in root.handlers:
+            h.setFormatter(JsonFormatter())
+            h.addFilter(RequestIdFilter())
     seed_database(reset=False)
     logger.info("host %s", collect_host_status())
     yield
@@ -41,6 +135,19 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="AI Data Analyst Agent", version=__version__, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    rid = uuid.uuid4().hex[:8]
+    token = None
+    if _request_id_var is not None:
+        token = _request_id_var.set(rid)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = rid
+    if _request_id_var is not None and token is not None:
+        _request_id_var.reset(token)
+    return response
 
 
 class ChatIn(BaseModel):
@@ -107,7 +214,10 @@ def schema() -> list[dict]:
 
 
 @app.post("/api/chat")
-def chat(body: ChatIn) -> dict:
+def chat(body: ChatIn, request: Request) -> dict:
+    client_ip = request.client.host if request.client else "unknown"
+    if not _rate_limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please wait a moment.")
     question = body.message.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Message is empty.")

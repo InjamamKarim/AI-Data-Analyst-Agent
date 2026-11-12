@@ -54,3 +54,20 @@ def test_csv_upload_is_queryable_and_neutralized():
     with get_writer_engine().begin() as conn:
         conn.exec_driver_sql("DROP TABLE IF EXISTS uploaded_csv")
     invalidate_catalog()
+
+
+def test_request_id_header_is_present():
+    client = TestClient(app)
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert "X-Request-ID" in response.headers
+    assert len(response.headers["X-Request-ID"]) == 8
+
+
+def test_rate_limiter():
+    from backend.main import RateLimiter
+    limiter = RateLimiter(limit=2, window=10.0)
+    assert limiter.is_allowed("127.0.0.1") is True
+    assert limiter.is_allowed("127.0.0.1") is True
+    assert limiter.is_allowed("127.0.0.1") is False
+    assert limiter.is_allowed("192.168.1.1") is True

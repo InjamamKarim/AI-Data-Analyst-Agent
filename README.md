@@ -12,7 +12,8 @@ This machine was checked before the project was built: macOS, no `nvidia-smi` GP
 | E2B code interpreter | Not installed and not called. Local subprocess sandbox |
 | S3 / GCS chart upload | Charts are written under `artifacts/charts` and served by the API |
 | LangSmith | Not enabled. Traces go to `logs/traces.jsonl` and `logs/audit.jsonl` |
-| BIRD / Spider download | Not downloaded. Metrics and a 50-question suite run on the sample warehouse |
+| BIRD / Spider download | Not downloaded. Metrics and a 60-question suite run on the sample warehouse |
+| Conversation Memory | Supported: sliding window of up to 6 prior turns in context |
 
 ## Setup
 
@@ -33,7 +34,7 @@ Do not point `NVIDIA_BASE_URL` at OpenAI or another paid host. The client refuse
 python -m uvicorn backend.main:app --reload
 ```
 
-Open http://127.0.0.1:8000 . Demo mode is on while the key is empty. It replays curated SQL for the 50 sample questions and labels that clearly. It is not a model score.
+Open http://127.0.0.1:8000 . Demo mode is on while the key is empty. It replays curated SQL for the 60 sample questions and labels that clearly. It is not a model score.
 
 ```bash
 python -m backend.cli --examples
@@ -73,7 +74,7 @@ BIRD and Spider 2.0 are not bundled. `eval/benchmarks.py` explains where to plac
 6. **Chart check.** The file must be a real PNG and the code must draw the requested chart type.
 7. **Answer.** A table is always available. If Python fails three times, the SQL table is returned anyway.
 
-Arm G is the full configuration: SQL, Python, schema filtering, profiling, and chart review. Arms H–J change only the documentation layout (semantic notes, notes fetched by a tool, or a preference for the `completed_lines` and `quarterly_revenue` views).
+Arm G is the full configuration: SQL, Python, schema filtering, profiling, and chart review. Arms H–J change only the documentation layout (semantic notes, notes fetched by a tool, or a preference for the `completed_lines` and `quarterly_revenue` views). Arm K enables Chain-of-Thought planning with step-by-step reasoning.
 
 ## Security checklist
 

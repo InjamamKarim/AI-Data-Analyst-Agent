@@ -28,6 +28,7 @@ ARMS: dict[str, Arm] = {
     "H": Arm("H", "Semantic notes only", True, True, True, True, True, "semantic"),
     "I": Arm("I", "Semantic notes via tool", True, True, True, True, True, "tool"),
     "J": Arm("J", "Prefer precomputed views", True, True, True, True, True, "views"),
+    "K": Arm("K", "Chain-of-thought planner", True, True, True, True, True, "full"),
 }
 
 

@@ -14,13 +14,13 @@ _STEPS = {"execute_sql", "run_python", "both", "fetch_context", "respond"}
 _CHARTS = {"bar", "line", "pie", "scatter", "histogram", "none"}
 
 DEMO_MISS = (
-    "Demo mode only runs the 50 curated sample questions, and this one is not in that set. "
+    "Demo mode only runs the 60 curated sample questions, and this one is not in that set. "
     "Pick an example question, or add your free NVIDIA_API_KEY to .env and turn demo mode off."
 )
 
 
 class ScriptedPlanner:
-    """Replays the Golden 50. This path is labeled demo and is not a model score."""
+    """Replays the Golden 60. This path is labeled demo and is not a model score."""
 
     def plan(self, state: dict) -> dict[str, Any]:
         if state.get("context_mode") == "tool" and not state.get("context_loaded"):
@@ -41,15 +41,32 @@ class ScriptedPlanner:
 
 class NvidiaPlanner:
     def plan(self, state: dict) -> dict[str, Any]:
-        text, tokens = complete(system_prompt(), render_planner_input(state))
+        arm = state.get("arm") or "G"
+        prompt = system_prompt(arm)
+        user_input = render_planner_input(state)
+        text, tokens = complete(prompt, user_input)
         try:
             plan = parse_plan(text)
         except (json.JSONDecodeError, ValueError):
-            plan = _plan(
-                "respond",
-                answer="The model did not return a usable plan. Try rephrasing the question.",
-                reasoning="JSON parse failed.",
-            )
+            # Attempt one repair retry
+            try:
+                repair_prompt = (
+                    "Fix this broken JSON to match the schema "
+                    "{next_step, sql, python, chart_type, answer, reasoning}. "
+                    "Return ONLY valid JSON and nothing else:\n" + text[:800]
+                )
+                repaired_text, repair_tokens = complete(
+                    "You are a JSON repair tool. Return only a valid JSON object.",
+                    repair_prompt,
+                )
+                tokens += repair_tokens
+                plan = parse_plan(repaired_text)
+            except Exception:
+                plan = _plan(
+                    "respond",
+                    answer="The model did not return a usable plan. Try rephrasing the question.",
+                    reasoning="JSON parse failed.",
+                )
         plan["tokens"] = tokens
         return plan
 
@@ -75,11 +92,33 @@ class RoutingPlanner:
         return NvidiaPlanner().plan(state)
 
 
-def parse_plan(text: str) -> dict[str, Any]:
+def _extract_json_substring(text: str) -> str:
+    # 1. Try markdown fenced block: ```json ... ``` or ``` ... ```
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if fenced:
+        return fenced.group(1).strip()
+
+    # 2. Find outermost matching braces
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start : end + 1].strip()
+
+    # 3. Fallback: regex search
     match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        raise ValueError("Planner output did not contain JSON.")
-    data = json.loads(match.group(0))
+    if match:
+        return match.group(0).strip()
+    raise ValueError("Planner output did not contain JSON.")
+
+
+def parse_plan(text: str) -> dict[str, Any]:
+    raw_json = _extract_json_substring(text)
+    try:
+        data = json.loads(raw_json)
+    except json.JSONDecodeError:
+        # Simple fixup for trailing commas before closing braces
+        cleaned = re.sub(r",\s*([\}\]])", r"\1", raw_json)
+        data = json.loads(cleaned)
     if not isinstance(data, dict):
         raise ValueError("Planner JSON was not an object.")
     step = str(data.get("next_step") or "respond")

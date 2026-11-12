@@ -62,6 +62,15 @@ class Session:
         if fixed_plan is not None:
             payload["fixed_plan"] = fixed_plan
         config = {"configurable": {"thread_id": thread_id}}
+        # Inject conversation history from prior checkpoint for this thread.
+        try:
+            snapshot = self.graph.get_state(config)
+            if snapshot and snapshot.values:
+                prior_history = list(snapshot.values.get("conversation_history") or [])
+                if prior_history:
+                    payload["conversation_history"] = prior_history[-3:]
+        except Exception:
+            logger.exception("could not read prior checkpoint for conversation_history")
         trace_event("turn_start", thread_id=thread_id, arm=arm, planner_mode=mode)
         try:
             self.graph.invoke(payload, config)
@@ -165,6 +174,7 @@ def _public_result(values: dict, thread_id: str, latency: float) -> dict[str, An
         "planner_mode": values.get("planner_mode"),
         "demo": values.get("planner_mode") == "scripted",
         "trace": values.get("trace") or [],
+        "conversation_history": values.get("conversation_history") or [],
         "interrupted": False,
         "interrupt": None,
         "thread_id": values.get("thread_id") or thread_id,

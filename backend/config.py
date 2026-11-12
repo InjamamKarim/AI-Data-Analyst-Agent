@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
 from dotenv import dotenv_values
+
+_settings_logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = PROJECT_ROOT / ".env"
@@ -82,7 +86,7 @@ class Settings:
         return not bool(self.db_connection_string.strip())
 
 
-def get_settings() -> Settings:
+def _build_settings() -> Settings:
     file_values = {}
     if ENV_PATH.exists():
         loaded = dotenv_values(ENV_PATH)
@@ -102,7 +106,7 @@ def get_settings() -> Settings:
     except ValueError:
         temperature = 0.0
 
-    return Settings(
+    settings = Settings(
         nvidia_api_key=pick("NVIDIA_API_KEY"),
         nvidia_base_url=pick("NVIDIA_BASE_URL", DEFAULT_BASE_URL).rstrip("/"),
         nvidia_model=pick("NVIDIA_MODEL", DEFAULT_MODEL),
@@ -119,6 +123,34 @@ def get_settings() -> Settings:
         max_tool_calls=_int(pick("MAX_TOOL_CALLS", "10"), 10),
         token_budget=_int(pick("TOKEN_BUDGET", "12000"), 12000),
     )
+
+    if temperature > 0:
+        _settings_logger.warning(
+            "NVIDIA_TEMPERATURE is %s — text-to-SQL accuracy is best at 0.", temperature
+        )
+
+    return settings
+
+
+_settings_cache: Settings | None = None
+_settings_lock = threading.Lock()
+_settings_mtime: float = 0.0
+
+
+def get_settings(*, reload: bool = False) -> Settings:
+    global _settings_cache, _settings_mtime
+    with _settings_lock:
+        mtime = ENV_PATH.stat().st_mtime if ENV_PATH.exists() else 0.0
+        if _settings_cache is None or reload or mtime != _settings_mtime:
+            _settings_cache = _build_settings()
+            _settings_mtime = mtime
+        return _settings_cache
+
+
+def invalidate_settings_cache() -> None:
+    global _settings_cache
+    with _settings_lock:
+        _settings_cache = None
 
 
 def assert_free_endpoint(base_url: str, allow_hosts: tuple[str, ...]) -> None:

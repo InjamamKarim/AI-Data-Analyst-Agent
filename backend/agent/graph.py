@@ -374,11 +374,19 @@ def synthesize_node(state: AgentState) -> dict:
         rejected=bool(state.get("rejected")),
         tokens=tokens,
     )
+    history = list(state.get("conversation_history") or [])
+    history.append({
+        "q": state.get("question"),
+        "answer": answer[:300],
+        "sql": state.get("sql_query"),
+    })
+    history = history[-6:]
     return {
         "answer": answer,
         "tokens": tokens,
         "messages": [{"role": "assistant", "content": answer}],
         "trace": _append(state, "synthesize"),
+        "conversation_history": history,
     }
 
 

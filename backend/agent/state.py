@@ -40,3 +40,4 @@ class AgentState(TypedDict, total=False):
     rejected: bool
     approved: bool
     trace: list
+    conversation_history: list
