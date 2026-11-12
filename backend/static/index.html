@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data analyst</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <p class="eyebrow">Local warehouse · remote model</p>
+      <h1>Data analyst</h1>
+    </div>
+    <p id="host-line" class="host">Checking this machine…</p>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+  <main>
+    <aside>
+      <section>
+        <h2>Run</h2>
+        <label for="arm">Ablation arm</label>
+        <select id="arm"></select>
+        <label class="check"><input id="demo" type="checkbox"> Demo mode (sample questions, no API)</label>
+        <label class="check"><input id="hitl" type="checkbox"> Ask before SQL or Python runs</label>
+      </section>
+      <section>
+        <h2>Upload CSV</h2>
+        <form id="upload-form">
+          <input id="csv" type="file" accept=".csv,text/csv">
+          <button type="submit">Load file</button>
+        </form>
+        <p id="upload-note" class="note"></p>
+      </section>
+      <section>
+        <h2>Schema</h2>
+        <div id="schema" class="schema"></div>
+      </section>
+    </aside>
+    <section class="conversation">
+      <div id="examples" class="examples"></div>
+      <div id="transcript" class="transcript" aria-live="polite"></div>
+      <form id="composer">
+        <label for="question" class="sr">Question</label>
+        <textarea id="question" rows="3" placeholder="Ask about the sample orders, or pick an example."></textarea>
+        <button id="send" type="submit">Ask</button>
+      </form>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
