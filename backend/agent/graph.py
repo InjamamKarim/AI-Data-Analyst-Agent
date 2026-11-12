@@ -221,12 +221,14 @@ def hitl_node(state: AgentState) -> dict:
     )
     approved = bool(decision.get("approved")) if isinstance(decision, dict) else bool(decision)
     if not approved:
-        audit_event("plan_rejected", thread_id=state.get("thread_id"), sql_sha256=code_hash(state.get("sql_query")))
+        query = state.get("sql_query")
+        audit_event("plan_rejected", thread_id=state.get("thread_id"), sql_sha256=code_hash(query))
         return {
             "approved": False,
             "rejected": True,
             "next_step": "respond",
             "sql_query": None,
+            "blocked_sql": query,
             "answer": "This plan was not approved, so nothing ran.",
             "trace": _append(state, "hitl", approved=False),
         }
@@ -247,10 +249,19 @@ def fetch_context_node(state: AgentState) -> dict:
 
 
 def execute_sql_node(state: AgentState) -> dict:
+    query = state.get("sql_query") or ""
     if state.get("hitl_enabled") and not state.get("approved"):
         message = "BLOCKED: plan was not approved."
-        return {"blocked": True, "error": message, "answer": message, "next_step": "respond", "sql_result": None}
-    query = state.get("sql_query") or ""
+        return {
+            "blocked": True,
+            "error": message,
+            "answer": message,
+            "next_step": "respond",
+            "sql_result": None,
+            "sql_query": None,
+            "blocked_sql": query,
+            "trace": _append(state, "execute_sql", blocked=True),
+        }
     outcome = run_select(query)
     calls = int(state.get("tool_calls") or 0) + 1
     if outcome["blocked"]:

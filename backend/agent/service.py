@@ -81,8 +81,18 @@ class Session:
             pass
         except Exception:
             logger.exception("resume failed")
-            return _failed(thread_id, "G", "auto", started)
+            arm, mode = self._checkpoint_labels(config)
+            return _failed(thread_id, arm, mode, started)
         return self._from_checkpoint(config, thread_id, started)
+
+    def _checkpoint_labels(self, config: dict) -> tuple[str, str]:
+        try:
+            snapshot = self.graph.get_state(config)
+            values = dict(getattr(snapshot, "values", None) or {})
+        except Exception:
+            logger.exception("could not read checkpoint metadata")
+            values = {}
+        return str(values.get("arm") or "G"), str(values.get("planner_mode") or "auto")
 
     def _from_checkpoint(self, config: dict, thread_id: str, started: float) -> dict[str, Any]:
         snapshot = self.graph.get_state(config)

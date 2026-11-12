@@ -101,9 +101,50 @@ def test_hitl_rejection_runs_nothing_and_approval_runs_sql():
     rejected = session.resume(paused["thread_id"], approved=False)
     assert rejected["rejected"] is True
     assert rejected["sql"] is None
+    assert "SELECT" in rejected["blocked_sql"]
 
     approved_session = Session()
     waiting = approved_session.ask("How many products are in the catalog?", planner_mode="scripted", hitl=True)
     finished = approved_session.resume(waiting["thread_id"], approved=True)
     assert finished["interrupted"] is False
     assert finished["rows"][0]["products"] == 12
+
+
+def test_unapproved_sql_keeps_the_blocked_query():
+    from backend.agent.graph import execute_sql_node
+
+    query = "SELECT COUNT(*) AS products FROM products"
+    result = execute_sql_node(
+        {"hitl_enabled": True, "approved": False, "sql_query": query, "trace": []}
+    )
+    assert result["blocked"] is True
+    assert result["blocked_sql"] == query
+    assert result["sql_query"] is None
+    assert "BLOCKED" in result["answer"]
+
+
+def test_resume_error_reports_the_thread_configuration(monkeypatch):
+    session = Session()
+    paused = session.ask(
+        "How many products are in the catalog?",
+        planner_mode="scripted",
+        arm="E",
+        hitl=True,
+    )
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("resume exploded")
+
+    monkeypatch.setattr(session.graph, "invoke", explode)
+    failed = session.resume(paused["thread_id"], approved=True)
+    assert failed["error"] == "internal_error"
+    assert failed["arm"] == "E"
+    assert failed["planner_mode"] == "scripted"
+    assert failed["demo"] is True
+
+
+def test_unknown_planner_mode_does_not_blame_the_api_key():
+    result = run_agent("How many products are in the catalog?", planner_mode="sideways")
+    assert result["sql"] is None
+    assert "Unknown planner mode" in result["output"]
+    assert "NVIDIA_API_KEY" not in result["output"]

@@ -8,7 +8,7 @@ from typing import Any
 
 from backend.agent.prompts import render_planner_input, system_prompt
 from backend.db.golden import lookup_case
-from backend.llm.nvidia import MISSING_KEY_MESSAGE, MissingAPIKeyError, complete
+from backend.llm.nvidia import complete
 
 _STEPS = {"execute_sql", "run_python", "both", "fetch_context", "respond"}
 _CHARTS = {"bar", "line", "pie", "scatter", "histogram", "none"}
@@ -64,7 +64,14 @@ class RoutingPlanner:
         if mode == "scripted":
             return ScriptedPlanner().plan(state)
         if mode != "auto":
-            return _plan("respond", answer=MISSING_KEY_MESSAGE, reasoning="Unknown planner mode.")
+            return _plan(
+                "respond",
+                answer=(
+                    f"Unknown planner mode '{mode}'. "
+                    "Use auto for the NVIDIA model, scripted for the sample questions, or fixed for a supplied plan."
+                ),
+                reasoning="Unknown planner mode.",
+            )
         return NvidiaPlanner().plan(state)
 
 
